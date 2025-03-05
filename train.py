@@ -15,11 +15,11 @@ from utils.general import AverageMeter
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-def save_checkpoint(state, filename='checkpoint.pth.tar'):
+def save_checkpoint(state, filename='checkpoint.pth'):
     torch.save(state, filename)
     logging.info(f'Save checkpoint to {filename}')
 
-def train_one_epoch(train_loader, pfld_backbone, auxiliarynet, criterion, optimizer, epoch, batch_size):
+def train_one_epoch(train_loader, pfld_backbone, auxiliarynet, criterion, optimizer, epoch):
     losses = AverageMeter("Loss")
     pfld_backbone.train()
     auxiliarynet.train()
@@ -32,7 +32,7 @@ def train_one_epoch(train_loader, pfld_backbone, auxiliarynet, criterion, optimi
 
         features, landmarks = pfld_backbone(img)
         angle = auxiliarynet(features)
-        weighted_loss, loss = criterion(attribute_gt, landmark_gt, euler_angle_gt, angle, landmarks, batch_size)
+        weighted_loss, loss = criterion(attribute_gt, landmark_gt, euler_angle_gt, angle, landmarks)
 
         optimizer.zero_grad()
         weighted_loss.backward()
@@ -69,7 +69,7 @@ def main(args):
         format='[%(asctime)s] [%(levelname)s] %(message)s',
         datefmt='%H:%M:%S',
         level=logging.INFO,
-        handlers=[logging.FileHandler('app.log', mode='w'), logging.StreamHandler()]
+        handlers=[logging.FileHandler('training.log', mode='w'), logging.StreamHandler()]
     )
 
     pfld_backbone = PFLDInference()
@@ -89,7 +89,7 @@ def main(args):
     start_epoch = args.start_epoch
 
     if args.resume and os.path.isfile(args.resume):
-        checkpoint = torch.load(args.resume)
+        checkpoint = torch.load(args.resume, weights_only=False)
         pfld_backbone.load_state_dict(checkpoint["pfld_backbone"])
         auxiliarynet.load_state_dict(checkpoint["auxiliarynet"])
         optimizer.load_state_dict(checkpoint['optimizer'])
@@ -122,7 +122,7 @@ def main(args):
 
     for epoch in range(start_epoch, args.end_epoch + 1):
         train_loss = train_one_epoch(
-            train_loader, pfld_backbone, auxiliarynet, criterion, optimizer, epoch, args.train_batchsize
+            train_loader, pfld_backbone, auxiliarynet, criterion, optimizer, epoch
         )
         val_loss = validate(val_loader, pfld_backbone, auxiliarynet)
 

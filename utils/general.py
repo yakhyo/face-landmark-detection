@@ -64,8 +64,7 @@ def calculate_pitch_yaw_roll(landmarks_2D,
     rmat, _ = cv2.Rodrigues(rvec)
     pose_mat = cv2.hconcat((rmat, tvec))
     _, _, _, _, _, _, euler_angles = cv2.decomposeProjectionMatrix(pose_mat)
-    return map(lambda k: k[0],
-               euler_angles)  # euler_angles contain (pitch, yaw, roll)
+    return map(lambda k: k[0],               euler_angles)  # euler_angles contain (pitch, yaw, roll)
 
 
 class AverageMeter:

@@ -15,7 +15,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 def load_model(model_path):
     """Load the trained PFLD model from checkpoint."""
     logging.info(f"Loading PFLD model from {model_path}")
-    checkpoint = torch.load(model_path, map_location=device)
+    checkpoint = torch.load(model_path, weights_only=False, map_location=device)
     pfld_backbone = PFLDInference().to(device)
     pfld_backbone.load_state_dict(checkpoint['pfld_backbone'])
     pfld_backbone.eval()

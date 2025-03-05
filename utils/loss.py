@@ -14,7 +14,6 @@ class PFLDLoss(nn.Module):
         euler_angle_gt: torch.Tensor,
         angle: torch.Tensor,
         landmarks: torch.Tensor,
-        train_batchsize: int
     ) -> tuple[torch.Tensor, torch.Tensor]:
 
         # Compute angle-based weighting

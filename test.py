@@ -1,146 +1,199 @@
-# ------------------------------------------------------------------------------
-# Copyright (c) Zhichao Zhao
-# Licensed under the MIT License.
-# Created by Zhichao zhao(zhaozhichao4515@gmail.com)
-# ------------------------------------------------------------------------------
 import argparse
 import time
-
 import cv2
 import numpy as np
 from matplotlib import pyplot as plt
-from scipy.integrate import simpson 
+from scipy.integrate import simpson
 
 import torch
 from torchvision import transforms
 from torch.utils.data import DataLoader
 import torch.backends.cudnn as cudnn
 from utils.dataset import WLFWDatasets
-
 from models.pfld import PFLDInference
 
-cudnn.benchmark = True
-cudnn.determinstic = True
-cudnn.enabled = True
+# Enable cuDNN optimizations
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 def compute_nme(preds, target):
-    """ preds/target:: numpy array, shape is (N, L, 2)
-        N: batchsize L: num of landmark 
     """
-    N = preds.shape[0]
+    Compute Normalized Mean Error (NME) between predicted and ground truth landmarks.
+
+    Args:
+        preds (numpy.ndarray): Predicted landmarks, shape (N, L, 2)
+        target (numpy.ndarray): Ground truth landmarks, shape (N, L, 2)
+
+    Returns:
+        np.ndarray: NME values for each sample
+    """
     L = preds.shape[1]
-    rmse = np.zeros(N)
 
-    for i in range(N):
-        pts_pred, pts_gt = preds[i, ], target[i, ]
-        if L == 19:  # aflw
-            interocular = 34  # meta['box_size'][i]
-        elif L == 29:  # cofw
-            interocular = np.linalg.norm(pts_gt[8, ] - pts_gt[9, ])
-        elif L == 68:  # 300w
-            # interocular
-            interocular = np.linalg.norm(pts_gt[36, ] - pts_gt[45, ])
-        elif L == 98:
-            interocular = np.linalg.norm(pts_gt[60, ] - pts_gt[72, ])
-        else:
-            raise ValueError('Number of landmarks is wrong')
-        rmse[i] = np.sum(np.linalg.norm(pts_pred - pts_gt,
-                                        axis=1)) / (interocular * L)
+    if L == 68:
+        interocular = np.linalg.norm(target[:, 36] - target[:, 45], axis=1)
+    elif L == 98:
+        interocular = np.linalg.norm(target[:, 60] - target[:, 72], axis=1)
+    elif L == 19:
+        interocular = 34  # Fixed value
+    elif L == 29:
+        interocular = np.linalg.norm(target[:, 8] - target[:, 9], axis=1)
+    else:
+        raise ValueError("Invalid number of landmarks.")
 
+    rmse = np.sum(np.linalg.norm(preds - target, axis=2), axis=1) / (interocular * L)
     return rmse
 
 
-def compute_auc(errors, failureThreshold, step=0.0001, showCurve=True):
-    nErrors = len(errors)
-    xAxis = list(np.arange(0., failureThreshold + step, step))
-    ced = [float(np.count_nonzero([errors <= x])) / nErrors for x in xAxis]
+def compute_auc(errors, failure_threshold=0.1, step=0.0001, show_curve=True):
+    """
+    Compute the Area Under Curve (AUC) and failure rate for NME.
 
-    AUC = simpson (ced, x=xAxis) / failureThreshold
-    failureRate = 1. - ced[-1]
+    Args:
+        errors (list): List of NME errors.
+        failure_threshold (float): Threshold for failure rate calculation.
+        step (float): Step size for curve computation.
+        show_curve (bool): Whether to display the curve.
 
-    if showCurve:
-        plt.plot(xAxis, ced)
+    Returns:
+        float: AUC value
+        float: Failure rate
+    """
+    x_axis = np.arange(0., failure_threshold + step, step)
+
+    # Compute Cumulative Error Distribution (CED)
+    ced = np.array([np.count_nonzero(errors <= x) / len(errors) for x in x_axis])
+
+    auc = simpson(ced, x=x_axis) / failure_threshold
+    failure_rate = 1.0 - ced[-1]
+
+    if show_curve:
+        plt.plot(x_axis, ced)
+        plt.xlabel("Error Threshold")
+        plt.ylabel("Proportion of Samples")
+        plt.title("Cumulative Error Distribution")
         plt.show()
 
-    return AUC, failureRate
+    return auc, failure_rate
 
 
-def validate(wlfw_val_dataloader, pfld_backbone):
-    pfld_backbone.eval()
+def validate(dataloader, model, show_image=False):
+    """
+    Validate the model on the dataset.
 
+    Args:
+        dataloader (DataLoader): DataLoader for validation dataset.
+        model (torch.nn.Module): Model for inference.
+        show_image (bool): Whether to visualize predictions.
+
+    Returns:
+        None
+    """
+    model.eval()
     nme_list = []
-    cost_time = []
+    cost_times = []
+
     with torch.no_grad():
-        for img, landmark_gt, _, _ in wlfw_val_dataloader:
-            img = img.to(device)
-            landmark_gt = landmark_gt.to(device)
-            pfld_backbone = pfld_backbone.to(device)
+        for image, landmark_gt, _, _ in dataloader:
+            image, landmark_gt = image.to(device), landmark_gt.to(device)
 
             start_time = time.time()
-            _, landmarks = pfld_backbone(img)
-            cost_time.append(time.time() - start_time)
+            _, landmarks = model(image)
+            cost_times.append(time.time() - start_time)
 
-            landmarks = landmarks.cpu().numpy()
-            landmarks = landmarks.reshape(landmarks.shape[0], -1,
-                                          2)  # landmark
-            landmark_gt = landmark_gt.reshape(landmark_gt.shape[0], -1,
-                                              2).cpu().numpy()  # landmark_gt
+            landmarks = landmarks.cpu().numpy().reshape(landmarks.shape[0], -1, 2)
+            landmark_gt = landmark_gt.cpu().numpy().reshape(landmark_gt.shape[0], -1, 2)
 
-            if args.show_image:
-                show_img = np.array(
-                    np.transpose(img[0].cpu().numpy(), (1, 2, 0)))
-                show_img = (show_img * 255).astype(np.uint8)
-                np.clip(show_img, 0, 255)
+            if show_image:
+                visualize_landmarks(image[0].cpu().numpy(), landmarks[0])
 
-                pre_landmark = landmarks[0] * [112, 112]
+            nme_list.extend(compute_nme(landmarks, landmark_gt))
 
-                cv2.imwrite("show_img.jpg", show_img)
-                img_clone = cv2.imread("show_img.jpg")
+    print(f'NME: {np.mean(nme_list):.4f}')
+    auc, failure_rate = compute_auc(nme_list)
+    print(f'AUC @ 0.1 Failure Threshold: {auc:.4f}')
+    print(f'Failure Rate: {failure_rate:.4f}')
+    print(f'Inference Time: {np.mean(cost_times):.6f} sec')
 
-                for (x, y) in pre_landmark.astype(np.int32):
-                    cv2.circle(img_clone, (x, y), 1, (255, 0, 0), -1)
-                cv2.imshow("show_img.jpg", img_clone)
-                cv2.waitKey(0)
 
-            nme_temp = compute_nme(landmarks, landmark_gt)
-            for item in nme_temp:
-                nme_list.append(item)
+def visualize_landmarks(image, landmarks):
+    """
+    Visualize landmarks on the image in a resizable window.
 
-        # nme
-        print('nme: {:.4f}'.format(np.mean(nme_list)))
-        # auc and failure rate
-        failureThreshold = 0.1
-        auc, failure_rate = compute_auc(nme_list, failureThreshold)
-        print('auc @ {:.1f} failureThreshold: {:.4f}'.format(
-            failureThreshold, auc))
-        print('failure_rate: {:}'.format(failure_rate))
-        # inference time
-        print("inference_cost_time: {0:4f}".format(np.mean(cost_time)))
+    Args:
+        image (numpy.ndarray): Image in CHW format (3, H, W) with values in range [0,1].
+        landmarks (numpy.ndarray): Predicted landmarks.
+
+    Returns:
+        None
+    """
+    # Convert CHW (Channel, Height, Width) to HWC (Height, Width, Channel)
+    image = (np.transpose(image, (1, 2, 0)) * 255).astype(np.uint8)
+
+    # Convert RGB to BGR for OpenCV display
+    image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+
+    # Ensure image is contiguous for OpenCV
+    image = np.ascontiguousarray(image)
+
+    # Scale landmarks to image size
+    landmarks *= np.array([image.shape[1], image.shape[0]])
+
+    for (x, y) in landmarks.astype(np.int32):
+        cv2.circle(image, (x, y), 1, (0, 0, 255), -1)
+
+    # Create a resizable window
+    cv2.namedWindow("Landmarks", cv2.WINDOW_NORMAL)
+
+    # Resize the window to a reasonable default size (optional)
+    cv2.resizeWindow("Landmarks", max(600, image.shape[1]), max(400, image.shape[0]))
+
+    while True:
+        cv2.imshow("Landmarks", image)
+        key = cv2.waitKey(1) & 0xFF  # Wait for key press
+
+        # Press 'q' or 'Esc' to close
+        if key == ord('q') or key == 27:
+            break
+
+    cv2.destroyAllWindows()
 
 
 def main(args):
-    checkpoint = torch.load(args.model_path, map_location=device)
-    pfld_backbone = PFLDInference().to(device)
-    pfld_backbone.load_state_dict(checkpoint['pfld_backbone'])
+    checkpoint = torch.load(args.model_path, weights_only=False, map_location=device)
+    model = PFLDInference().to(device)
+    model.load_state_dict(checkpoint['pfld_backbone'])
 
-    transform = transforms.Compose([transforms.ToTensor()])
-    wlfw_val_dataset = WLFWDatasets(args.test_dataset, transform)
-    wlfw_val_dataloader = DataLoader(wlfw_val_dataset, batch_size=1, shuffle=False, num_workers=0)
+    transform = transforms.ToTensor()
+    dataset = WLFWDatasets(args.test_dataset, transform)
+    dataloader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=0)
 
-    validate(wlfw_val_dataloader, pfld_backbone)
+    validate(dataloader, model, args.show_image)
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description='Testing')
+    parser = argparse.ArgumentParser(description="Facial Landmark Detection Model Testing Script")
 
-    parser.add_argument('--model_path', default="./checkpoint/snapshot/last_ckpt.pth", type=str)
-    parser.add_argument('--test_dataset', default='./data/test_data/list.txt', type=str)
-    parser.add_argument('--show_image', default=False, type=bool)
+    parser.add_argument(
+        "--model-path",
+        type=str,
+        default="./checkpoint/last_ckpt.pth",
+        help="Path to the pre-trained model checkpoint file (.pth)."
+    )
 
-    args = parser.parse_args()
-    return args
+    parser.add_argument(
+        "--test-dataset",
+        type=str,
+        default="./data/test_data/list.txt",
+        help="Path to the test dataset file (list of image paths and landmarks)."
+    )
+
+    parser.add_argument(
+        "--show-image",
+        action="store_true",
+        help="If set, displays the images with predicted landmarks overlayed."
+    )
+
+    return parser.parse_args()
 
 
 if __name__ == "__main__":
