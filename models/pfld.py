@@ -1,7 +1,6 @@
+import math
 import torch
 from torch import nn, Tensor
-import math
-
 from typing import Any, Callable, List, Optional
 
 
