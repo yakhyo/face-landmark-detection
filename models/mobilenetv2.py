@@ -76,6 +76,9 @@ class MobileNetV2(nn.Module):
                 stride = s if i == 0 else 1
                 features.append(InvertedResidual(input_channel, output_channel, stride, expand_ratio=t))
                 input_channel = output_channel
+                
+        
+        
         # building last several layers
         features.append(
             Conv2dNormActivation(
@@ -130,3 +133,14 @@ def mobilenet_v2(*, pretrained: bool = True, progress: bool = True, **kwargs: An
         model.load_state_dict(weights)
 
     return model
+
+
+
+if __name__ == "__main__":
+    model = mobilenet_v2(pretrained=False)
+    
+    print(sum(p.numel() for p in model.parameters() if p.requires_grad))
+    
+    # print(model)
+    
+    

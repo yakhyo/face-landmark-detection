@@ -5,10 +5,7 @@ from models.pfld import PFLDInference
 
 # Define paths (Update if needed)
 torch_model_path = "./checkpoint/last_ckpt.pth"
-onnx_model_path = "./output/pfld_landmark.onnx"
-
-# Ensure output directory exists
-os.makedirs(os.path.dirname(onnx_model_path), exist_ok=True)
+onnx_model_path = "./checkpoint/pfld_landmark.onnx"
 
 # Load PyTorch Model
 print("=====> Loading PyTorch checkpoint...")
@@ -27,8 +24,8 @@ torch.onnx.export(
     dummy_input,
     onnx_model_path,
     verbose=True,
-    input_names=["input"],  # Proper input name
-    output_names=["output"],  # Proper output name
+    input_names=["input"],
+    output_names=["output"],
     opset_version=11,
     do_constant_folding=True
 )

@@ -1,7 +1,6 @@
 ./data/test_data
 ./data/train_data
 ./data/WFLW
-./checkpoint
 
 
 # Byte-compiled / optimized / DLL files
