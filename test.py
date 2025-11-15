@@ -58,7 +58,7 @@ def compute_auc(errors, failure_threshold=0.1, step=0.0001, show_curve=True):
         float: AUC value
         float: Failure rate
     """
-    x_axis = np.arange(0., failure_threshold + step, step)
+    x_axis = np.arange(0.0, failure_threshold + step, step)
 
     # Compute Cumulative Error Distribution (CED)
     ced = np.array([np.count_nonzero(errors <= x) / len(errors) for x in x_axis])
@@ -108,11 +108,11 @@ def validate(dataloader, model, show_image=False):
 
             nme_list.extend(compute_nme(landmarks, landmark_gt))
 
-    print(f'NME: {np.mean(nme_list):.4f}')
+    print(f"NME: {np.mean(nme_list):.4f}")
     auc, failure_rate = compute_auc(nme_list)
-    print(f'AUC @ 0.1 Failure Threshold: {auc:.4f}')
-    print(f'Failure Rate: {failure_rate:.4f}')
-    print(f'Inference Time: {np.mean(cost_times):.6f} sec')
+    print(f"AUC @ 0.1 Failure Threshold: {auc:.4f}")
+    print(f"Failure Rate: {failure_rate:.4f}")
+    print(f"Inference Time: {np.mean(cost_times):.6f} sec")
 
 
 def visualize_landmarks(image, landmarks):
@@ -138,7 +138,7 @@ def visualize_landmarks(image, landmarks):
     # Scale landmarks to image size
     landmarks *= np.array([image.shape[1], image.shape[0]])
 
-    for (x, y) in landmarks.astype(np.int32):
+    for x, y in landmarks.astype(np.int32):
         cv2.circle(image, (x, y), 1, (0, 0, 255), -1)
 
     # Create a resizable window
@@ -152,7 +152,7 @@ def visualize_landmarks(image, landmarks):
         key = cv2.waitKey(1) & 0xFF  # Wait for key press
 
         # Press 'q' or 'Esc' to close
-        if key == ord('q') or key == 27:
+        if key == ord("q") or key == 27:
             break
 
     cv2.destroyAllWindows()
@@ -161,7 +161,7 @@ def visualize_landmarks(image, landmarks):
 def main(args):
     checkpoint = torch.load(args.model_path, weights_only=False, map_location=device)
     model = PFLDInference().to(device)
-    model.load_state_dict(checkpoint['pfld_backbone'])
+    model.load_state_dict(checkpoint["pfld_backbone"])
 
     transform = transforms.ToTensor()
     dataset = WLFWDatasets(args.test_dataset, transform)
@@ -176,21 +176,19 @@ def parse_args():
     parser.add_argument(
         "--model-path",
         type=str,
-        default="./checkpoint/last_ckpt.pth",
-        help="Path to the pre-trained model checkpoint file (.pth)."
+        default="./weights/last_ckpt.pth",
+        help="Path to the pre-trained model checkpoint file (.pth).",
     )
 
     parser.add_argument(
         "--test-dataset",
         type=str,
         default="./data/test_data/list.txt",
-        help="Path to the test dataset file (list of image paths and landmarks)."
+        help="Path to the test dataset file (list of image paths and landmarks).",
     )
 
     parser.add_argument(
-        "--show-image",
-        action="store_true",
-        help="If set, displays the images with predicted landmarks overlayed."
+        "--show-image", action="store_true", help="If set, displays the images with predicted landmarks overlayed."
     )
 
     return parser.parse_args()

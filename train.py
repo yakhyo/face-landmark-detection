@@ -190,7 +190,7 @@ def parse_args():
     parser.add_argument(
         "--save-dir",
         type=str,
-        default="./checkpoint/",
+        default="./weights/",
         help="Directory to save model checkpoints"
     )
     parser.add_argument(
